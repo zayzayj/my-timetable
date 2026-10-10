@@ -194,10 +194,19 @@
 </head>
 
 <body>
-  <header class="header">
-    <h1>TIMETABLE</h1>
-    <button class="clear-button" id="clearAll">Clear All</button>
-  </header>
+<header class="header">
+  <h1>TIMETABLE</h1>
+
+  <div>
+    <label for="startDate">Starting date</label>
+    <input type="date" id="startDate">
+
+    <button class="clear-button" id="clearAll">
+      Clear All
+    </button>
+  </div>
+</header>
+
 
   <div class="weekdays">
     <div>MONDAY</div>
@@ -251,10 +260,26 @@
     const editor = document.getElementById("editor");
     const form = document.getElementById("taskForm");
 
-    let activeDay = null;
-    let activeTaskIndex = null;
-    let tasks = {};
-    let dates = {};
+let activeDay = null;
+let activeTaskIndex = null;
+let tasks = {};
+
+let startDate = localStorage.getItem("myTimetableStartDate") || "";
+
+document.getElementById("startDate").value = startDate;
+
+document.getElementById("startDate").addEventListener("change", function() {
+  startDate = this.value;
+
+  try {
+    localStorage.setItem("myTimetableStartDate", startDate);
+  } catch {
+    alert("Could not save the starting date in this browser.");
+  }
+
+  renderCalendar();
+});
+
 
     try {
       dates = JSON.parse(localStorage.getItem("myTimetableDates") || "{}");
@@ -311,10 +336,18 @@
         // Clicking the empty area adds another task.
         cell.addEventListener("click", () => openEditor(day, null));
 
-        const number = document.createElement("span");
-        number.className = "day-number";
-        number.textContent = dates[day] || "";
-        cell.appendChild(number);
+const number = document.createElement("span");
+number.className = "day-number";
+
+if (startDate) {
+  const date = new Date(startDate + "T12:00:00");
+  date.setDate(date.getDate() + day - 1);
+  number.textContent = date.getDate();
+} else {
+  number.textContent = "";
+}
+
+cell.appendChild(number);
 
         const dayTasks = Array.isArray(tasks[day]) ? tasks[day] : [];
 
@@ -375,7 +408,6 @@
 
       document.getElementById("deleteTask").hidden = !existing;
 
-      document.getElementById("boxDate").value = dates[day] || "";
       editor.showModal();
     }
 

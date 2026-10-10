@@ -323,6 +323,7 @@ const number = document.createElement("span");
 number.className = "day-number";
 
 
+
 let displayDate = "";
 
 const startingDay = Object.keys(dates)
@@ -337,11 +338,6 @@ if (startingDay !== undefined) {
 }
 
 number.textContent = displayDate;
-
-
-
-}
-
 cell.appendChild(number);
 
         const dayTasks = Array.isArray(tasks[day]) ? tasks[day] : [];

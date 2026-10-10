@@ -264,10 +264,6 @@ let activeDay = null;
 let activeTaskIndex = null;
 let tasks = {};
 
-let startDate = localStorage.getItem("myTimetableStartDate") || "";
-
-document.getElementById("startDate").value = startDate;
-
 document.getElementById("startDate").addEventListener("change", function() {
   startDate = this.value;
 
@@ -278,7 +274,6 @@ document.getElementById("startDate").addEventListener("change", function() {
   }
 
   renderCalendar();
-});
 
 
     try {

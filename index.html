@@ -7,9 +7,7 @@
   <title>My Timetable</title>
 
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -17,12 +15,6 @@
       font-family: Arial, sans-serif;
       background: #f7f7f2;
       color: #292d29;
-    }
-
-    h1 {
-      font-size: 48px;
-      letter-spacing: 3px;
-      margin: 0;
     }
 
     .header {
@@ -33,13 +25,20 @@
       margin-bottom: 25px;
     }
 
+    h1 {
+      font-size: 48px;
+      letter-spacing: 3px;
+      margin: 0;
+    }
+
+    button { font-family: inherit; }
+
     .clear-button {
       background: #476b50;
       color: white;
       border: none;
       border-radius: 8px;
       padding: 12px 18px;
-      font-size: 14px;
       cursor: pointer;
     }
 
@@ -65,33 +64,56 @@
     }
 
     .day {
-      height: 135px;
-      padding: 9px;
-      text-align: left;
-      vertical-align: top;
+      height: 160px;
+      min-width: 0;
+      padding: 7px;
       background: white;
       border: 0;
       border-right: 1px solid #d9ddd6;
       border-bottom: 1px solid #d9ddd6;
-      cursor: pointer;
+      text-align: left;
+      overflow-y: auto;
       overflow-wrap: anywhere;
+      cursor: pointer;
     }
 
-    .day:hover {
-      background: #f0f5ef;
-    }
+    .day:hover { background: #f8faf7; }
 
     .day-number {
+      display: block;
+      margin-bottom: 7px;
       font-weight: bold;
       font-size: 13px;
     }
 
     .task {
-      display: block;
-      margin-top: 9px;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      min-width: 0;
+      margin: 5px 0;
       padding: 6px;
+      border: 0;
       border-radius: 5px;
+      text-align: left;
+      color: #292d29;
+      cursor: pointer;
+    }
+
+    .task:hover { filter: brightness(0.96); }
+
+    .task-title {
       font-size: 12px;
+      font-weight: bold;
+    }
+
+    .task-notes {
+      margin-top: 5px;
+      padding-top: 4px;
+      border-top: 1px solid #00000018;
+      font-size: 10px;
+      font-style: italic;
+      line-height: 1.3;
       white-space: pre-wrap;
     }
 
@@ -103,14 +125,14 @@
 
     dialog {
       width: min(420px, 90%);
+      max-height: 90vh;
+      overflow-y: auto;
       border: 1px solid #ddd;
       border-radius: 12px;
       padding: 24px;
     }
 
-    dialog::backdrop {
-      background: #0006;
-    }
+    dialog::backdrop { background: #0006; }
 
     label {
       display: block;
@@ -153,11 +175,17 @@
     }
 
     @media (max-width: 600px) {
-      body { padding: 12px; }
-      h1 { font-size: 30px; }
-      .day { height: 90px; padding: 4px; }
-      .task { font-size: 9px; padding: 3px; }
-      .weekdays div { font-size: 9px; letter-spacing: 0; }
+      body { padding: 10px; }
+      h1 { font-size: 27px; letter-spacing: 1px; }
+      .day { height: 125px; padding: 4px; }
+      .task { padding: 4px; }
+      .task-title { font-size: 10px; }
+      .task-notes { font-size: 9px; }
+      .weekdays div {
+        font-size: 9px;
+        letter-spacing: 0;
+        padding: 12px 1px;
+      }
     }
   </style>
 </head>
@@ -169,28 +197,28 @@
   </header>
 
   <div class="weekdays">
-    <div>SUNDAY</div>
     <div>MONDAY</div>
     <div>TUESDAY</div>
     <div>WEDNESDAY</div>
     <div>THURSDAY</div>
     <div>FRIDAY</div>
     <div>SATURDAY</div>
+    <div>SUNDAY</div>
   </div>
 
   <main id="calendar"></main>
 
   <dialog id="editor">
     <form id="taskForm">
-      <h2 id="dayTitle">Edit day</h2>
+      <h2 id="dayTitle">Edit task</h2>
 
       <label for="taskTitle">What are you doing?</label>
       <input id="taskTitle" maxlength="150"
              placeholder="e.g. Finish homework">
 
-      <label for="taskDetails">Extra notes</label>
+      <label for="taskDetails">Notes (shown in small italics)</label>
       <textarea id="taskDetails" rows="4"
-                placeholder="Write more details here..."></textarea>
+                placeholder="Add reminders or extra details..."></textarea>
 
       <label for="taskColour">Choose a colour</label>
       <select id="taskColour">
@@ -217,12 +245,29 @@
     const form = document.getElementById("taskForm");
 
     let activeDay = null;
+    let activeTaskIndex = null;
     let tasks = {};
 
+    const colours = ["green", "blue", "pink", "yellow", "purple"];
+
+    // Load saved tasks and convert the old one-task format if necessary.
     try {
-      tasks = JSON.parse(localStorage.getItem("myTimetable") || "{}");
-      if (!tasks || Array.isArray(tasks) || typeof tasks !== "object") {
-        tasks = {};
+      const saved = JSON.parse(
+        localStorage.getItem("myTimetable") || "{}"
+      );
+
+      if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+        for (const day in saved) {
+          const entry = saved[day];
+
+          if (Array.isArray(entry)) {
+            tasks[day] = entry.filter(
+              task => task && typeof task === "object"
+            );
+          } else if (entry && typeof entry === "object") {
+            tasks[day] = [entry];
+          }
+        }
       }
     } catch {
       tasks = {};
@@ -242,60 +287,112 @@
       calendar.replaceChildren();
 
       for (let day = 1; day <= 31; day++) {
-        const cell = document.createElement("button");
-        cell.type = "button";
+        const cell = document.createElement("div");
         cell.className = "day";
+
+        // Clicking the empty area adds another task.
+        cell.addEventListener("click", () => openEditor(day, null));
 
         const number = document.createElement("span");
         number.className = "day-number";
         number.textContent = day;
         cell.appendChild(number);
 
-        if (tasks[day]) {
-          const task = document.createElement("span");
-          task.className = "task " + tasks[day].colour;
-          task.textContent = tasks[day].title;
-          cell.appendChild(task);
-          cell.title = tasks[day].details || tasks[day].title;
-        }
+        const dayTasks = Array.isArray(tasks[day]) ? tasks[day] : [];
 
-        cell.addEventListener("click", () => openEditor(day));
+        dayTasks.forEach((task, index) => {
+          const bubble = document.createElement("button");
+          bubble.type = "button";
+
+          const colour = colours.includes(task.colour)
+            ? task.colour : "green";
+
+          bubble.className = "task " + colour;
+          bubble.title = "Click to edit this task";
+
+          const title = document.createElement("span");
+          title.className = "task-title";
+          title.textContent = task.title || "(Untitled task)";
+          bubble.appendChild(title);
+
+          if (task.details) {
+            const notes = document.createElement("span");
+            notes.className = "task-notes";
+            notes.textContent = task.details;
+            bubble.appendChild(notes);
+          }
+
+          // Clicking a bubble edits that specific task only.
+          bubble.addEventListener("click", event => {
+            event.stopPropagation();
+            openEditor(day, index);
+          });
+
+          cell.appendChild(bubble);
+        });
+
         calendar.appendChild(cell);
       }
     }
 
-    function openEditor(day) {
+    function openEditor(day, taskIndex) {
       activeDay = day;
-      const task = tasks[day] || {};
+      activeTaskIndex = taskIndex;
 
-      document.getElementById("dayTitle").textContent = "Day " + day;
-      document.getElementById("taskTitle").value = task.title || "";
-      document.getElementById("taskDetails").value = task.details || "";
-      document.getElementById("taskColour").value = task.colour || "green";
-      document.getElementById("deleteTask").hidden = !tasks[day];
+      const existing = taskIndex !== null
+        ? tasks[day][taskIndex]
+        : null;
+
+      document.getElementById("dayTitle").textContent =
+        existing ? "Edit task — Day " + day : "Add task — Day " + day;
+
+      document.getElementById("taskTitle").value =
+        existing?.title || "";
+
+      document.getElementById("taskDetails").value =
+        existing?.details || "";
+
+      document.getElementById("taskColour").value =
+        colours.includes(existing?.colour) ? existing.colour : "green";
+
+      document.getElementById("deleteTask").hidden = !existing;
 
       editor.showModal();
     }
 
-    form.addEventListener("submit", function(event) {
+    form.addEventListener("submit", event => {
       event.preventDefault();
 
-      const oldTask = tasks[activeDay];
-      const title = document.getElementById("taskTitle").value.trim();
+      const title = document.getElementById("taskTitle")
+        .value.trim();
+
+      const details = document.getElementById("taskDetails")
+        .value.trim();
+
+      const colour = document.getElementById("taskColour").value;
 
       if (!title) {
-        delete tasks[activeDay];
+        alert("Please enter a task title.");
+        return;
+      }
+
+      const previous = JSON.stringify(tasks[activeDay] || []);
+
+      if (!tasks[activeDay]) tasks[activeDay] = [];
+
+      const newTask = { title, details, colour };
+
+      if (activeTaskIndex === null) {
+        // Add a new task without replacing other tasks.
+        tasks[activeDay].push(newTask);
       } else {
-        tasks[activeDay] = {
-          title: title,
-          details: document.getElementById("taskDetails").value.trim(),
-          colour: document.getElementById("taskColour").value
-        };
+        // Edit only the selected task.
+        tasks[activeDay][activeTaskIndex] = newTask;
       }
 
       if (!saveTasks()) {
-        if (oldTask) tasks[activeDay] = oldTask;
-        else delete tasks[activeDay];
+        tasks[activeDay] = JSON.parse(previous);
+        if (tasks[activeDay].length === 0) delete tasks[activeDay];
         return;
       }
 
@@ -303,12 +400,19 @@
       renderCalendar();
     });
 
-    document.getElementById("deleteTask").addEventListener("click", function() {
-      const oldTask = tasks[activeDay];
-      delete tasks[activeDay];
+    document.getElementById("deleteTask").addEventListener("click", () => {
+      if (activeTaskIndex === null) return;
+
+      const previous = JSON.stringify(tasks[activeDay]);
+
+      tasks[activeDay].splice(activeTaskIndex, 1);
+
+      if (tasks[activeDay].length === 0) {
+        delete tasks[activeDay];
+      }
 
       if (!saveTasks()) {
-        tasks[activeDay] = oldTask;
+        tasks[activeDay] = JSON.parse(previous);
         return;
       }
 
@@ -316,20 +420,20 @@
       renderCalendar();
     });
 
-    document.getElementById("cancel").addEventListener("click", function() {
+    document.getElementById("cancel").addEventListener("click", () => {
       editor.close();
     });
 
-    document.getElementById("clearAll").addEventListener("click", function() {
+    document.getElementById("clearAll").addEventListener("click", () => {
       if (!confirm("Are you sure you want to clear all your timetable entries?")) {
         return;
       }
 
-      const oldTasks = tasks;
+      const previous = tasks;
       tasks = {};
 
       if (!saveTasks()) {
-        tasks = oldTasks;
+        tasks = previous;
         return;
       }
 

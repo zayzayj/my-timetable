@@ -198,10 +198,7 @@
   <h1>TIMETABLE</h1>
 
   <div>
-    <label for="startDate">Starting date</label>
-    <input type="date" id="startDate">
-
-    <button class="clear-button" id="clearAll">
+      <button class="clear-button" id="clearAll">
       Clear All
     </button>
   </div>
@@ -223,6 +220,7 @@
   <dialog id="editor">
     <form id="taskForm">
       <h2 id="dayTitle">Edit task</h2>
+
 <label for="boxDate">Date for this box (optional)</label>
 <input id="boxDate" type="date">
 <button type="button" id="saveDate">Save date</button>
@@ -264,7 +262,6 @@ let activeDay = null;
 let activeTaskIndex = null;
 let tasks = {};
 
-let startDate = localStorage.getItem("myTimetableStartDate") || "";
 let dates = {};
 
 try {
@@ -276,19 +273,6 @@ try {
   dates = {};
 }
 
-document.getElementById("startDate").value = startDate;
-
-document.getElementById("startDate").addEventListener("change", function() {
-  startDate = this.value;
-
-  try {
-    localStorage.setItem("myTimetableStartDate", startDate);
-  } catch {
-    alert("Could not save the starting date.");
-  }
-
-  renderCalendar();
-});
 
     const colours = ["green", "blue", "pink", "yellow", "purple"];
 
@@ -338,12 +322,24 @@ document.getElementById("startDate").addEventListener("change", function() {
 const number = document.createElement("span");
 number.className = "day-number";
 
-if (startDate) {
-  const date = new Date(startDate + "T12:00:00");
-  date.setDate(date.getDate() + day - 1);
-  number.textContent = date.getDate();
-} else {
-  number.textContent = "";
+
+let displayDate = "";
+
+const startingDay = Object.keys(dates)
+  .map(Number)
+  .filter(box => dates[box] && box <= day)
+  .sort((a, b) => b - a)[0];
+
+if (startingDay !== undefined) {
+  const date = new Date(dates[startingDay] + "T12:00:00");
+  date.setDate(date.getDate() + day - startingDay);
+  displayDate = date.getDate();
+}
+
+number.textContent = displayDate;
+
+
+
 }
 
 cell.appendChild(number);
@@ -385,30 +381,34 @@ cell.appendChild(number);
       }
     }
 
-    function openEditor(day, taskIndex) {
-      activeDay = day;
-      activeTaskIndex = taskIndex;
+function openEditor(day, taskIndex) {
+  activeDay = day;
+  activeTaskIndex = taskIndex;
 
-      const existing = taskIndex !== null
-        ? tasks[day][taskIndex]
-        : null;
+  const existing = taskIndex !== null
+    ? tasks[day][taskIndex]
+    : null;
 
-      document.getElementById("dayTitle").textContent =
-        existing ? "Edit task — Day " + day : "Add task - Day " + day;
+  document.getElementById("dayTitle").textContent =
+    existing ? "Edit task — Day " + day : "Add task — Day " + day;
 
-      document.getElementById("taskTitle").value =
-        existing?.title || "";
+  document.getElementById("taskTitle").value =
+    existing?.title || "";
 
-      document.getElementById("taskDetails").value =
-        existing?.details || "";
+  document.getElementById("taskDetails").value =
+    existing?.details || "";
 
-      document.getElementById("taskColour").value =
-        colours.includes(existing?.colour) ? existing.colour : "green";
+  document.getElementById("taskColour").value =
+    colours.includes(existing?.colour) ? existing.colour : "green";
 
-      document.getElementById("deleteTask").hidden = !existing;
+  document.getElementById("boxDate").value =
+    dates[day] || "";
 
-      editor.showModal();
-    }
+  document.getElementById("deleteTask").hidden = !existing;
+
+  editor.showModal();
+}
+
 
     form.addEventListener("submit", event => {
       event.preventDefault();

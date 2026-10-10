@@ -1,0 +1,342 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Timetable</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 30px;
+      font-family: Arial, sans-serif;
+      background: #f7f7f2;
+      color: #292d29;
+    }
+
+    h1 {
+      font-size: 48px;
+      letter-spacing: 3px;
+      margin: 0;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 25px;
+    }
+
+    .clear-button {
+      background: #476b50;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 18px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .weekdays, #calendar {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+    }
+
+    .weekdays div {
+      background: #dce9dd;
+      color: #365540;
+      text-align: center;
+      padding: 15px 2px;
+      font-size: 12px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      border: 1px solid #cbd9cc;
+    }
+
+    #calendar {
+      border-top: 0;
+      border-left: 1px solid #d9ddd6;
+    }
+
+    .day {
+      height: 135px;
+      padding: 9px;
+      text-align: left;
+      vertical-align: top;
+      background: white;
+      border: 0;
+      border-right: 1px solid #d9ddd6;
+      border-bottom: 1px solid #d9ddd6;
+      cursor: pointer;
+      overflow-wrap: anywhere;
+    }
+
+    .day:hover {
+      background: #f0f5ef;
+    }
+
+    .day-number {
+      font-weight: bold;
+      font-size: 13px;
+    }
+
+    .task {
+      display: block;
+      margin-top: 9px;
+      padding: 6px;
+      border-radius: 5px;
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+
+    .green { background: #e0eee0; }
+    .blue { background: #e0ebf8; }
+    .pink { background: #f7e3e6; }
+    .yellow { background: #f8efcc; }
+    .purple { background: #ece5fa; }
+
+    dialog {
+      width: min(420px, 90%);
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    dialog::backdrop {
+      background: #0006;
+    }
+
+    label {
+      display: block;
+      margin: 14px 0 6px;
+      font-size: 14px;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font: inherit;
+    }
+
+    .actions {
+      display: flex;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .actions button {
+      padding: 10px 13px;
+      border: 0;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .save {
+      background: #476b50;
+      color: white;
+    }
+
+    .delete {
+      margin-right: auto;
+      color: #a33;
+      background: white;
+    }
+
+    @media (max-width: 600px) {
+      body { padding: 12px; }
+      h1 { font-size: 30px; }
+      .day { height: 90px; padding: 4px; }
+      .task { font-size: 9px; padding: 3px; }
+      .weekdays div { font-size: 9px; letter-spacing: 0; }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="header">
+    <h1>TIMETABLE</h1>
+    <button class="clear-button" id="clearAll">Clear All</button>
+  </header>
+
+  <div class="weekdays">
+    <div>SUNDAY</div>
+    <div>MONDAY</div>
+    <div>TUESDAY</div>
+    <div>WEDNESDAY</div>
+    <div>THURSDAY</div>
+    <div>FRIDAY</div>
+    <div>SATURDAY</div>
+  </div>
+
+  <main id="calendar"></main>
+
+  <dialog id="editor">
+    <form id="taskForm">
+      <h2 id="dayTitle">Edit day</h2>
+
+      <label for="taskTitle">What are you doing?</label>
+      <input id="taskTitle" maxlength="150"
+             placeholder="e.g. Finish homework">
+
+      <label for="taskDetails">Extra notes</label>
+      <textarea id="taskDetails" rows="4"
+                placeholder="Write more details here..."></textarea>
+
+      <label for="taskColour">Choose a colour</label>
+      <select id="taskColour">
+        <option value="green">Sage green</option>
+        <option value="blue">Soft blue</option>
+        <option value="pink">Dusty pink</option>
+        <option value="yellow">Butter yellow</option>
+        <option value="purple">Lavender</option>
+      </select>
+
+      <div class="actions">
+        <button type="button" class="delete" id="deleteTask">
+          Delete
+        </button>
+        <button type="button" id="cancel">Cancel</button>
+        <button type="submit" class="save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    const calendar = document.getElementById("calendar");
+    const editor = document.getElementById("editor");
+    const form = document.getElementById("taskForm");
+
+    let activeDay = null;
+    let tasks = {};
+
+    try {
+      tasks = JSON.parse(localStorage.getItem("myTimetable") || "{}");
+      if (!tasks || Array.isArray(tasks) || typeof tasks !== "object") {
+        tasks = {};
+      }
+    } catch {
+      tasks = {};
+    }
+
+    function saveTasks() {
+      try {
+        localStorage.setItem("myTimetable", JSON.stringify(tasks));
+        return true;
+      } catch {
+        alert("Could not save your timetable in this browser.");
+        return false;
+      }
+    }
+
+    function renderCalendar() {
+      calendar.replaceChildren();
+
+      for (let day = 1; day <= 31; day++) {
+        const cell = document.createElement("button");
+        cell.type = "button";
+        cell.className = "day";
+
+        const number = document.createElement("span");
+        number.className = "day-number";
+        number.textContent = day;
+        cell.appendChild(number);
+
+        if (tasks[day]) {
+          const task = document.createElement("span");
+          task.className = "task " + tasks[day].colour;
+          task.textContent = tasks[day].title;
+          cell.appendChild(task);
+          cell.title = tasks[day].details || tasks[day].title;
+        }
+
+        cell.addEventListener("click", () => openEditor(day));
+        calendar.appendChild(cell);
+      }
+    }
+
+    function openEditor(day) {
+      activeDay = day;
+      const task = tasks[day] || {};
+
+      document.getElementById("dayTitle").textContent = "Day " + day;
+      document.getElementById("taskTitle").value = task.title || "";
+      document.getElementById("taskDetails").value = task.details || "";
+      document.getElementById("taskColour").value = task.colour || "green";
+      document.getElementById("deleteTask").hidden = !tasks[day];
+
+      editor.showModal();
+    }
+
+    form.addEventListener("submit", function(event) {
+      event.preventDefault();
+
+      const oldTask = tasks[activeDay];
+      const title = document.getElementById("taskTitle").value.trim();
+
+      if (!title) {
+        delete tasks[activeDay];
+      } else {
+        tasks[activeDay] = {
+          title: title,
+          details: document.getElementById("taskDetails").value.trim(),
+          colour: document.getElementById("taskColour").value
+        };
+      }
+
+      if (!saveTasks()) {
+        if (oldTask) tasks[activeDay] = oldTask;
+        else delete tasks[activeDay];
+        return;
+      }
+
+      editor.close();
+      renderCalendar();
+    });
+
+    document.getElementById("deleteTask").addEventListener("click", function() {
+      const oldTask = tasks[activeDay];
+      delete tasks[activeDay];
+
+      if (!saveTasks()) {
+        tasks[activeDay] = oldTask;
+        return;
+      }
+
+      editor.close();
+      renderCalendar();
+    });
+
+    document.getElementById("cancel").addEventListener("click", function() {
+      editor.close();
+    });
+
+    document.getElementById("clearAll").addEventListener("click", function() {
+      if (!confirm("Are you sure you want to clear all your timetable entries?")) {
+        return;
+      }
+
+      const oldTasks = tasks;
+      tasks = {};
+
+      if (!saveTasks()) {
+        tasks = oldTasks;
+        return;
+      }
+
+      renderCalendar();
+    });
+
+    renderCalendar();
+  </script>
+</body>
+</html>

@@ -333,12 +333,13 @@ const startingDay = Object.keys(dates)
 
 if (startingDay !== undefined) {
   const date = new Date(dates[startingDay] + "T12:00:00");
-  date.setDate(date.getDate() + day - startingDay);
+  date.setDate(date.getDate() + (day - startingDay));
   displayDate = date.getDate();
 }
 
 number.textContent = displayDate;
 cell.appendChild(number);
+
 
         const dayTasks = Array.isArray(tasks[day]) ? tasks[day] : [];
 
@@ -470,21 +471,26 @@ function openEditor(day, taskIndex) {
       editor.close();
     });
 
-    document.getElementById("clearAll").addEventListener("click", () => {
-      if (!confirm("Are you sure you want to clear all your timetable entries?")) {
-        return;
-      }
 
-      const previous = tasks;
-      tasks = {};
+document.getElementById("clearAll").addEventListener("click", () => {
+  if (!confirm("Are you sure you want to clear all your timetable entries and dates?")) {
+    return;
+  }
 
-      if (!saveTasks()) {
-        tasks = previous;
-        return;
-      }
+  tasks = {};
+  dates = {};
 
-      renderCalendar();
-    });
+  try {
+    localStorage.removeItem("myTimetable");
+    localStorage.removeItem("myTimetableDates");
+  } catch {
+    alert("Could not clear saved data in this browser.");
+    return;
+  }
+
+  renderCalendar();
+});
+
 
 document.getElementById("saveDate").addEventListener("click", () => {
   const chosenDate = document.getElementById("boxDate").value;

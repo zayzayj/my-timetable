@@ -211,6 +211,10 @@
   <dialog id="editor">
     <form id="taskForm">
       <h2 id="dayTitle">Edit task</h2>
+<label for="boxDate">Date for this box (optional)</label>
+<input id="boxDate" type="date">
+<button type="button" id="saveDate">Save date</button>
+
 
       <label for="taskTitle">What's on the agenda?</label>
       <input id="taskTitle" maxlength="150"
@@ -247,6 +251,16 @@
     let activeDay = null;
     let activeTaskIndex = null;
     let tasks = {};
+    let dates = {};
+
+    try {
+      dates = JSON.parse(localStorage.getItem("myTimetableDates") || "{}");
+      if (!dates || typeof dates !== "object" || Array.isArray(dates)) {
+    dates = {};
+  }
+} catch {
+  dates = {};
+}
 
     const colours = ["green", "blue", "pink", "yellow", "purple"];
 
@@ -289,13 +303,14 @@
       for (let day = 1; day <= 31; day++) {
         const cell = document.createElement("div");
         cell.className = "day";
+        cell.addEventListener("click", () => openEditor(day, null));
 
         // Clicking the empty area adds another task.
         cell.addEventListener("click", () => openEditor(day, null));
 
         const number = document.createElement("span");
         number.className = "day-number";
-        number.textContent = day;
+        number.textContent = dates[day] || "";
         cell.appendChild(number);
 
         const dayTasks = Array.isArray(tasks[day]) ? tasks[day] : [];
@@ -357,6 +372,7 @@
 
       document.getElementById("deleteTask").hidden = !existing;
 
+      document.getElementById("boxDate").value = dates[day] || "";
       editor.showModal();
     }
 
@@ -440,7 +456,28 @@
       renderCalendar();
     });
 
+document.getElementById("saveDate").addEventListener("click", () => {
+  const chosenDate = document.getElementById("boxDate").value;
+
+  if (chosenDate) {
+    dates[activeDay] = chosenDate;
+  } else {
+    delete dates[activeDay];
+  }
+
+  try {
+    localStorage.setItem("myTimetableDates", JSON.stringify(dates));
+  } catch {
+    alert("Could not save the date in this browser.");
+    return;
+  }
+
+  editor.close();
+  renderCalendar();
+});
+
     renderCalendar();
+    
   </script>
 </body>
 </html>

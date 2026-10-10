@@ -264,26 +264,31 @@ let activeDay = null;
 let activeTaskIndex = null;
 let tasks = {};
 
+let startDate = localStorage.getItem("myTimetableStartDate") || "";
+let dates = {};
+
+try {
+  dates = JSON.parse(localStorage.getItem("myTimetableDates") || "{}");
+  if (!dates || typeof dates !== "object" || Array.isArray(dates)) {
+    dates = {};
+  }
+} catch {
+  dates = {};
+}
+
+document.getElementById("startDate").value = startDate;
+
 document.getElementById("startDate").addEventListener("change", function() {
   startDate = this.value;
 
   try {
     localStorage.setItem("myTimetableStartDate", startDate);
   } catch {
-    alert("Could not save the starting date in this browser.");
+    alert("Could not save the starting date.");
   }
 
   renderCalendar();
-
-
-    try {
-      dates = JSON.parse(localStorage.getItem("myTimetableDates") || "{}");
-      if (!dates || typeof dates !== "object" || Array.isArray(dates)) {
-    dates = {};
-  }
-} catch {
-  dates = {};
-}
+});
 
     const colours = ["green", "blue", "pink", "yellow", "purple"];
 
@@ -326,8 +331,7 @@ document.getElementById("startDate").addEventListener("change", function() {
       for (let day = 1; day <= 31; day++) {
         const cell = document.createElement("div");
         cell.className = "day";
-        cell.addEventListener("click", () => openEditor(day, null));
-
+ 
         // Clicking the empty area adds another task.
         cell.addEventListener("click", () => openEditor(day, null));
 

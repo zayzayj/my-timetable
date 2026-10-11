@@ -515,5 +515,212 @@ document.getElementById("saveDate").addEventListener("click", () => {
     renderCalendar();
     
   </script>
+  
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+import {
+  getFirestore, doc, getDoc, setDoc, onSnapshot
+} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+import {
+  getAuth, signInAnonymously
+} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCL9x5HgjNsyJx_ACO5NYCJkbCxA71cyiM",
+  authDomain: "my-timetable-shared.firebaseapp.com",
+  projectId: "my-timetable-shared",
+  storageBucket: "my-timetable-shared.firebasestorage.app",
+  messagingSenderId: "433981731985",
+  appId: "1:433981731985:web:d306a6f23c909afa5dfb30"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+const TASKS_KEY = "myTimetable";
+const DATES_KEY = "myTimetableDates";
+const DRAFT_TASKS = "myTimetableLocalDraft";
+const DRAFT_DATES = "myTimetableDatesLocalDraft";
+const DRAFT_MARKER = "myTimetableDraftExists";
+
+let shareId = new URLSearchParams(location.search).get("share");
+let ready = false;
+let applyingRemote = false;
+let saveTimer;
+let unsubscribe = null;
+
+function readObject(key) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "{}");
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function currentData() {
+  return {
+    tasks: readObject(TASKS_KEY),
+    dates: readObject(DATES_KEY)
+  };
+}
+
+function saveDraft() {
+  localStorage.setItem(DRAFT_TASKS, JSON.stringify(readObject(TASKS_KEY)));
+  localStorage.setItem(DRAFT_DATES, JSON.stringify(readObject(DATES_KEY)));
+  localStorage.setItem(DRAFT_MARKER, "yes");
+}
+
+function restoreDraft() {
+  if (localStorage.getItem(DRAFT_MARKER) !== "yes") {
+    saveDraft();
+    return;
+  }
+
+  const tasks = localStorage.getItem(DRAFT_TASKS) || "{}";
+  const dates = localStorage.getItem(DRAFT_DATES) || "{}";
+  const changed =
+    localStorage.getItem(TASKS_KEY) !== tasks ||
+    localStorage.getItem(DATES_KEY) !== dates;
+
+  applyingRemote = true;
+  localStorage.setItem(TASKS_KEY, tasks);
+  localStorage.setItem(DATES_KEY, dates);
+  applyingRemote = false;
+
+  if (changed) location.reload();
+}
+
+function queueCloudSave() {
+  if (!ready || applyingRemote || !shareId) return;
+
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try {
+      await setDoc(doc(db, "sharedTimetables", shareId), {
+        ...currentData(),
+        updatedAt: Date.now()
+      });
+    } catch (error) {
+      console.error("Timetable sync failed:", error);
+      alert("Could not sync your timetable. Check your internet connection and try again.");
+    }
+  }, 400);
+}
+
+const originalSetItem = Storage.prototype.setItem;
+Storage.prototype.setItem = function(key, value) {
+  originalSetItem.call(this, key, value);
+  if (this === localStorage && [TASKS_KEY, DATES_KEY].includes(key)) {
+    queueCloudSave();
+  }
+};
+
+const originalRemoveItem = Storage.prototype.removeItem;
+Storage.prototype.removeItem = function(key) {
+  originalRemoveItem.call(this, key);
+  if (this === localStorage && [TASKS_KEY, DATES_KEY].includes(key)) {
+    queueCloudSave();
+  }
+};
+
+async function openSharedTimetable(id) {
+  await signInAnonymously(auth);
+
+  const ref = doc(db, "sharedTimetables", id);
+  const existing = await getDoc(ref);
+
+  if (!existing.exists()) {
+    alert("This shared timetable does not exist or its link is invalid.");
+    return;
+  }
+
+  unsubscribe?.();
+
+  unsubscribe = onSnapshot(ref, snapshot => {
+    if (!snapshot.exists()) return;
+
+    const data = snapshot.data();
+    if (!data.tasks || !data.dates) return;
+
+    const tasks = JSON.stringify(data.tasks);
+    const dates = JSON.stringify(data.dates);
+
+    const changed =
+      localStorage.getItem(TASKS_KEY) !== tasks ||
+      localStorage.getItem(DATES_KEY) !== dates;
+
+    if (changed) {
+      applyingRemote = true;
+      localStorage.setItem(TASKS_KEY, tasks);
+      localStorage.setItem(DATES_KEY, dates);
+      applyingRemote = false;
+      location.reload();
+      return;
+    }
+
+    ready = true;
+  }, error => {
+    console.error("Timetable listener failed:", error);
+    alert("Live sync stopped. Check your internet connection.");
+  });
+}
+
+const clearButton = [...document.querySelectorAll("button")]
+  .find(button => button.textContent.trim().toLowerCase() === "clear all");
+
+if (clearButton) {
+  const shareButton = document.createElement("button");
+  shareButton.textContent = "Share";
+  shareButton.className = clearButton.className;
+  shareButton.style.marginLeft = "8px";
+  clearButton.insertAdjacentElement("afterend", shareButton);
+
+  shareButton.addEventListener("click", async () => {
+    try {
+      if (shareId) {
+        await navigator.clipboard.writeText(location.href);
+        alert("Shared timetable link copied. Send it to your friends.");
+        return;
+      }
+
+      saveDraft();
+
+      const bytes = crypto.getRandomValues(new Uint8Array(32));
+      const newId = [...bytes]
+        .map(byte => byte.toString(16).padStart(2, "0"))
+        .join("");
+
+      await signInAnonymously(auth);
+
+      await setDoc(doc(db, "sharedTimetables", newId), {
+        ...currentData(),
+        updatedAt: Date.now()
+      });
+
+      const url = new URL(location.href);
+      url.searchParams.set("share", newId);
+      location.href = url.toString();
+    } catch (error) {
+      console.error("Sharing failed:", error);
+      alert("Could not create or copy the shared link. Please try again.");
+    }
+  });
+}
+
+if (shareId) {
+  openSharedTimetable(shareId).catch(error => {
+    console.error("Could not open shared timetable:", error);
+    alert("Could not connect to the shared timetable. Please try again.");
+  });
+} else {
+  restoreDraft();
+}
+</script>
+</body>
+</html>
+
 </body>
 </html>

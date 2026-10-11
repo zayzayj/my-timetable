@@ -386,8 +386,10 @@ function openEditor(day, taskIndex) {
     ? tasks[day][taskIndex]
     : null;
 
-  document.getElementById("dayTitle").textContent =
-    existing ? "Edit task — Day " + day : "Add task — Day " + day;
+
+document.getElementById("dayTitle").textContent =
+    existing ? "Edit task" : "Add task";
+
 
   document.getElementById("taskTitle").value =
     existing?.title || "";

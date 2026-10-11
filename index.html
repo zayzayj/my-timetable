@@ -525,14 +525,16 @@ import {
   getAuth, signInAnonymously
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 
+
 const firebaseConfig = {
-  apiKey: "AIzaSyCL9x5HgjNsyJx_ACO5NYCJkbCxA71cyiM",
+  apiKey: "AIzaSyCL9x5HgjNsyJx_ACoNYCJbkbCxA71cyiM",
   authDomain: "my-timetable-shared.firebaseapp.com",
   projectId: "my-timetable-shared",
   storageBucket: "my-timetable-shared.firebasestorage.app",
   messagingSenderId: "433981731985",
   appId: "1:433981731985:web:d306a6f23c909afa5dfb30"
 };
+
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -719,8 +721,5 @@ if (shareId) {
   restoreDraft();
 }
 </script>
-</body>
-</html>
-
 </body>
 </html>

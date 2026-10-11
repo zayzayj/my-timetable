@@ -730,7 +730,12 @@ const shareButton = addButton("Share", clearButton, async () => {
     if (!snap.exists() || !canRead(snap.data(), user)) {
       throw new Error("Your Google account is not authorised for this timetable.");
     }
-    await navigator.clipboard.writeText(location.href);
+    try {
+  await navigator.clipboard.writeText(location.href);
+  alert("Share link copied!");
+} catch (err) {
+  prompt("Copy your share link:", location.href);
+}
     alert("Timetable link copied. Only invited accounts can open it.");
     return;
   }

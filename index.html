@@ -518,15 +518,15 @@ document.getElementById("saveDate").addEventListener("click", () => {
     
   </script>
   
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
-  getFirestore, doc, getDoc, setDoc, onSnapshot
+  getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import {
-  getAuth, signInAnonymously
+  getAuth, GoogleAuthProvider, signInWithPopup
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
-
 
 const firebaseConfig = {
   apiKey: "AIzaSyCL9x5HgjNsyJx_ACoNYCJbkbCxA71cyiM",
@@ -537,28 +537,25 @@ const firebaseConfig = {
   appId: "1:433981731985:web:d306a6f23c909afa5dfb30"
 };
 
-
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
 
 const TASKS_KEY = "myTimetable";
 const DATES_KEY = "myTimetableDates";
-const DRAFT_TASKS = "myTimetableLocalDraft";
-const DRAFT_DATES = "myTimetableDatesLocalDraft";
-const DRAFT_MARKER = "myTimetableDraftExists";
+const shareId = new URLSearchParams(location.search).get("share");
 
-let shareId = new URLSearchParams(location.search).get("share");
 let ready = false;
 let applyingRemote = false;
 let saveTimer;
-let unsubscribe = null;
+let sharedRef = null;
+let sharedData = null;
 
 function readObject(key) {
   try {
-    const value = JSON.parse(localStorage.getItem(key) || "{}");
-    return value && typeof value === "object" && !Array.isArray(value)
-      ? value : {};
+    const v = JSON.parse(localStorage.getItem(key) || "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
   } catch {
     return {};
   }
@@ -571,45 +568,34 @@ function currentData() {
   };
 }
 
-function saveDraft() {
-  localStorage.setItem(DRAFT_TASKS, JSON.stringify(readObject(TASKS_KEY)));
-  localStorage.setItem(DRAFT_DATES, JSON.stringify(readObject(DATES_KEY)));
-  localStorage.setItem(DRAFT_MARKER, "yes");
+async function signIn() {
+  const result = await signInWithPopup(auth, provider);
+  if (!result.user.email || !result.user.emailVerified) {
+    throw new Error("Use a Google account with a verified email.");
+  }
+  return result.user;
 }
 
-function restoreDraft() {
-  if (localStorage.getItem(DRAFT_MARKER) !== "yes") {
-    saveDraft();
-    return;
-  }
-
-  const tasks = localStorage.getItem(DRAFT_TASKS) || "{}";
-  const dates = localStorage.getItem(DRAFT_DATES) || "{}";
-  const changed =
-    localStorage.getItem(TASKS_KEY) !== tasks ||
-    localStorage.getItem(DATES_KEY) !== dates;
-
-  applyingRemote = true;
-  localStorage.setItem(TASKS_KEY, tasks);
-  localStorage.setItem(DATES_KEY, dates);
-  applyingRemote = false;
-
-  if (changed) location.reload();
+function canRead(data, user) {
+  return data.ownerUid === user.uid ||
+    ["editor", "viewer"].includes(
+      data.invitedEmails?.[user.email?.toLowerCase()]
+    );
 }
 
 function queueCloudSave() {
-  if (!ready || applyingRemote || !shareId) return;
+  if (!ready || applyingRemote || !sharedRef) return;
 
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
     try {
-      await setDoc(doc(db, "sharedTimetables", shareId), {
+      await setDoc(sharedRef, {
         ...currentData(),
         updatedAt: Date.now()
-      });
+      }, { merge: true });
     } catch (error) {
-      console.error("Timetable sync failed:", error);
-      alert("Could not sync your timetable. Check your internet connection and try again.");
+      console.error("Sync failed:", error);
+      alert("Could not sync. Check your access and internet connection.");
     }
   }, 400);
 }
@@ -617,44 +603,68 @@ function queueCloudSave() {
 const originalSetItem = Storage.prototype.setItem;
 Storage.prototype.setItem = function(key, value) {
   originalSetItem.call(this, key, value);
-  if (this === localStorage && [TASKS_KEY, DATES_KEY].includes(key)) {
-    queueCloudSave();
-  }
+  if (this === localStorage &&
+      [TASKS_KEY, DATES_KEY].includes(key)) queueCloudSave();
 };
 
 const originalRemoveItem = Storage.prototype.removeItem;
 Storage.prototype.removeItem = function(key) {
   originalRemoveItem.call(this, key);
-  if (this === localStorage && [TASKS_KEY, DATES_KEY].includes(key)) {
-    queueCloudSave();
-  }
+  if (this === localStorage &&
+      [TASKS_KEY, DATES_KEY].includes(key)) queueCloudSave();
 };
 
-async function openSharedTimetable(id) {
-  await signInAnonymously(auth);
+const buttons = [...document.querySelectorAll("button")];
+const clearButton = buttons.find(
+  b => b.textContent.trim().toLowerCase() === "clear all"
+);
 
+function addButton(label, after, handler) {
+  const button = document.createElement("button");
+  button.textContent = label;
+  if (after) {
+    button.className = after.className;
+    button.style.marginLeft = "8px";
+    after.insertAdjacentElement("afterend", button);
+  } else {
+    clearButton?.insertAdjacentElement("afterend", button);
+  }
+  button.addEventListener("click", async () => {
+    try {
+      await handler();
+    } catch (error) {
+      console.error(error);
+      alert(error.message || "Something went wrong. Please try again.");
+    }
+  });
+  return button;
+}
+
+async function openShared(id, user) {
   const ref = doc(db, "sharedTimetables", id);
-  const existing = await getDoc(ref);
+  const snap = await getDoc(ref);
 
-  if (!existing.exists()) {
-    alert("This shared timetable does not exist or its link is invalid.");
-    return;
+  if (!snap.exists()) throw new Error("This timetable does not exist.");
+
+  const data = snap.data();
+  if (!canRead(data, user)) {
+    throw new Error("Your Google account has not been invited to this timetable.");
   }
 
-  unsubscribe?.();
+  sharedRef = ref;
+  sharedData = data;
 
-  unsubscribe = onSnapshot(ref, snapshot => {
+  onSnapshot(ref, snapshot => {
     if (!snapshot.exists()) return;
+    const remote = snapshot.data();
 
-    const data = snapshot.data();
-    if (!data.tasks || !data.dates) return;
-
-    const tasks = JSON.stringify(data.tasks);
-    const dates = JSON.stringify(data.dates);
-
+    const tasks = JSON.stringify(remote.tasks || {});
+    const dates = JSON.stringify(remote.dates || {});
     const changed =
       localStorage.getItem(TASKS_KEY) !== tasks ||
       localStorage.getItem(DATES_KEY) !== dates;
+
+    sharedData = remote;
 
     if (changed) {
       applyingRemote = true;
@@ -667,60 +677,95 @@ async function openSharedTimetable(id) {
 
     ready = true;
   }, error => {
-    console.error("Timetable listener failed:", error);
-    alert("Live sync stopped. Check your internet connection.");
+    console.error(error);
+    alert("Live sync failed. Check your connection and access.");
   });
+
+  if (data.ownerUid === user.uid) {
+    addInviteButton();
+  }
 }
 
-const clearButton = [...document.querySelectorAll("button")]
-  .find(button => button.textContent.trim().toLowerCase() === "clear all");
+function addInviteButton() {
+  if (document.getElementById("inviteButton")) return;
 
-if (clearButton) {
-  const shareButton = document.createElement("button");
-  shareButton.textContent = "Share";
-  shareButton.className = clearButton.className;
-  shareButton.style.marginLeft = "8px";
-  clearButton.insertAdjacentElement("afterend", shareButton);
+  const button = document.createElement("button");
+  button.id = "inviteButton";
+  button.textContent = "Invite by email";
+  button.style.marginLeft = "8px";
+  const shareButton = document.getElementById("shareButton");
+  shareButton?.insertAdjacentElement("afterend", button);
 
-  shareButton.addEventListener("click", async () => {
-    try {
-      if (shareId) {
-        await navigator.clipboard.writeText(location.href);
-        alert("Shared timetable link copied. Send it to your friends.");
-        return;
-      }
+  button.addEventListener("click", async () => {
+    const email = prompt("Enter the person's Google account email:");
+    if (!email || !email.trim()) return;
 
-      saveDraft();
+    const normalized = email.trim().toLowerCase();
+    const roleInput = prompt("Type editor or viewer:", "editor");
+    if (!roleInput) return;
 
-      const bytes = crypto.getRandomValues(new Uint8Array(32));
-      const newId = [...bytes]
-        .map(byte => byte.toString(16).padStart(2, "0"))
-        .join("");
-
-      await signInAnonymously(auth);
-
-      await setDoc(doc(db, "sharedTimetables", newId), {
-        ...currentData(),
-        updatedAt: Date.now()
-      });
-
-      const url = new URL(location.href);
-      url.searchParams.set("share", newId);
-      location.href = url.toString();
-    } catch (error) {
-      console.error("Sharing failed:", error);
-      alert("Could not create or copy the shared link. Please try again.");
+    const role = roleInput.trim().toLowerCase();
+    if (!["editor", "viewer"].includes(role)) {
+      alert("Choose editor or viewer.");
+      return;
     }
+
+    const latest = await getDoc(sharedRef);
+    if (!latest.exists() || latest.data().ownerUid !== auth.currentUser.uid) {
+      throw new Error("Only the owner can invite people.");
+    }
+
+    const invitedEmails = { ...(latest.data().invitedEmails || {}) };
+    invitedEmails[normalized] = role;
+    await updateDoc(sharedRef, { invitedEmails });
+    alert("Invitation permission saved. Send the timetable link to " + normalized + ".");
   });
 }
+
+const shareButton = addButton("Share", clearButton, async () => {
+  const user = await signIn();
+
+  if (shareId) {
+    const snap = await getDoc(doc(db, "sharedTimetables", shareId));
+    if (!snap.exists() || !canRead(snap.data(), user)) {
+      throw new Error("Your Google account is not authorised for this timetable.");
+    }
+    await navigator.clipboard.writeText(location.href);
+    alert("Timetable link copied. Only invited accounts can open it.");
+    return;
+  }
+
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const newId = [...bytes].map(b => b.toString(16).padStart(2, "0")).join("");
+
+  await setDoc(doc(db, "sharedTimetables", newId), {
+    ownerUid: user.uid,
+    invitedEmails: {},
+    ...currentData(),
+    updatedAt: Date.now()
+  });
+
+  const url = new URL(location.href);
+  url.searchParams.set("share", newId);
+  location.href = url.toString();
+});
+shareButton.id = "shareButton";
+
+const signInButton = addButton("Sign in with Google", null, async () => {
+  const user = await signIn();
+  if (shareId) {
+    await openShared(shareId, user);
+  } else {
+    alert("Signed in. Click Share to create a private shared timetable.");
+  }
+});
 
 if (shareId) {
-  openSharedTimetable(shareId).catch(error => {
-    console.error("Could not open shared timetable:", error);
-    alert("Could not connect to the shared timetable. Please try again.");
-  });
+  // Sign-in requires a user click; access is checked after Google sign-in.
+  signInButton.textContent = "Sign in to open timetable";
 } else {
-  restoreDraft();
+  // Keep your existing local timetable available when not sharing.
+  signInButton.remove();
 }
 </script>
 </body>
